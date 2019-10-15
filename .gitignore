@@ -1,0 +1,11 @@
+keys
+credentials.json
+creds.json
+known_hosts
+node_modules
+repo
+
+run-local.sh
+test-local.sh
+iam_local.json
+vm_local.json

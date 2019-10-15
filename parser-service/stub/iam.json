@@ -1,0 +1,91 @@
+[
+  {
+    "name": "projects/__PROJECT_ID__/locations/global/recommenders/google.iam.policy.Recommender/recommendations/3391f5aa-6a1e-4b2e-a7c4-b2b9d50d0dae",
+    "description": "Replace the current role with a smaller role to cover the permissions needed.",
+    "primaryImpact": {
+      "category": "SECURITY"
+    },
+    "content": {
+      "justification": {
+        "accessObservationEndTime": "2019-05-17T17:00:00-07:00",
+        "accessObservationStartTime": "2019-02-16T16:00:00-08:00",
+        "currentTotalPermissionsCount": "17",
+        "numGrantedPermissions": "17",
+        "numPermissionsAfterChange": "1",
+        "numUsedPermissions": "1",
+        "policyLastUpdateTime": "2019-03-07T14:59:52-08:00",
+        "recommendedTotalPermissionsCount": "1",
+        "sampledUsedPermissions": [
+          "resourcemanager.projects.get"
+        ],
+        "summary": "Replace the current role with a smaller role to cover the permissions needed.",
+        "usedPermissions": [
+          "resourcemanager.projects.get"
+        ],
+        "usedPermissionsCount": "1"
+      },
+      "resourceChanges": {
+        "iamPolicyChangeNewRole": {
+          "resourceType": "cloudresourcemanager.googleapis.com/Project",
+          "resourceName": "//cloudresourcemanager.googleapis.com/projects/google.com:__PROJECT_ID__",
+          "resourceChangeType": "UPDATE",
+          "changeSpec": {
+            "policyChange": {
+              "bindingChanges": [
+                {
+                  "action": "ADD",
+                  "bindingTuple": {
+                    "member": "serviceAccount:terraformtest@__PROJECT_ID__.iam.gserviceaccount.com",
+                    "role": "projects/google.com:__PROJECT_ID__/roles/viewer"
+                  }
+                },
+                {
+                  "action": "REMOVE",
+                  "bindingTuple": {
+                    "member": "serviceAccount:terraformtest@__PROJECT_ID__.iam.gserviceaccount.com",
+                    "role": "projects/google.com:__PROJECT_ID__/roles/editor"
+                  }
+                }
+              ]
+            }
+          },
+          "id": "iamPolicyChangeNewRole"
+        }
+      },
+      "contentFormat": "CANONICAL_V1",
+      "operationGroups": [
+        {
+          "operations": [
+            {
+              "action": "add",
+              "resourceType": "cloudresourcemanager.googleapis.com/Project",
+              "resource": "//cloudresourcemanager.googleapis.com/projects/google.com:__PROJECT_ID__",
+              "path": "/iamPolicy/bindings/*/members/-",
+              "value": "serviceAccount:terraformtest@__PROJECT_ID__.iam.gserviceaccount.com",
+              "pathFilters": {
+                "/iamPolicy/bindings/*/condition/expression": "",
+                "/iamPolicy/bindings/*/role": "projects/google.com:__PROJECT_ID__/roles/viewer"
+              }
+            },
+            {
+              "action": "remove",
+              "resourceType": "cloudresourcemanager.googleapis.com/Project",
+              "resource": "//cloudresourcemanager.googleapis.com/projects/google.com:__PROJECT_ID__",
+              "path": "/iamPolicy/bindings/*/members/*",
+              "pathFilters": {
+                "/iamPolicy/bindings/*/condition/expression": "",
+                "/iamPolicy/bindings/*/members/*": "serviceAccount:terraformtest@__PROJECT_ID__.iam.gserviceaccount.com",
+                "/iamPolicy/bindings/*/role": "projects/google.com:__PROJECT_ID__/roles/editor"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "stateInfo": {
+      "state": "ACTIVE"
+    },
+    "etag": "3993a6965ff08c56",
+    "lastRefreshTime": "2019-05-20T07:50:32Z"
+  }
+]

@@ -1,0 +1,50 @@
+[
+  {
+    "description" : "Downsize VM to save cost",
+    "name": "projects/__PROJECT_ID__/locations/us-west1a/recommenders/google.compute.instance.MachineTypeRecommender/recommendations/0fd31b24-cc05-4132-8431-ed54a22dd4f1",
+    "userLastUpdateTime": {
+      "seconds": 1546656644,
+      "nanos": 759369000
+    },
+    "lastRefreshTime": {
+      "seconds": 1543912652
+    },
+    "primaryImpact": {
+      "category": "COST",
+      "costProjection": {
+        "cost": {"currencyCode": "USD", "units": "50"},
+        "duration": { "seconds": 604800 }
+      }
+    },
+    "stateInfo": {
+      "state": "ACTIVE"
+    },
+    "etag": "3993a6965ff08c56",
+    "lastModifiedUser": "someone@company.com",
+    "content": {
+      "justification": {
+        "summary": "Downsize instance because its over provisioned when comparing against actual usage"
+      },
+      "operationGroups" : [
+        {
+          "operations" : [
+            {
+              "action": "test",
+              "resourceType": "compute.googleapis.com/Instance",
+              "resource" : "//compute.googleapis.com/projects/__PROJECT_ID__/zones/us-central1-b/instances/tf-compute-1",
+              "path": "/machineType",
+              "value": "zones/us-central1-f/machineTypes/g1-small"
+            },
+            {
+              "action": "replace",
+              "resourceType": "compute.googleapis.com/Instance",
+              "resource" : "https://www.googleapis.com/compute/v1/projects/__PROJECT_ID__/zones/us-central1-b/instances/tf-compute-1",
+              "path": "/machineType",
+              "value": "zones/us-central1-f/machineTypes/f1-micro"
+            }
+          ]
+        }
+      ]
+    }
+  }
+]
