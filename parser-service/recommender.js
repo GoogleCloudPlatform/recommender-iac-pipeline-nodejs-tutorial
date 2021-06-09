@@ -41,9 +41,9 @@ const request = require('request-promise')
  *         [{instanceID: string, size: string, recommendationID: string,
  *           recommendationETag: string}]
  */
-const listVMResizeRecommendations = async (projectIDs, isStub) => {
+const listVMResizeRecommendations = async (projectIDs, isStub, location) => {
   const recommendations =
-      await fetchRecommendations('VM', projectIDs, isStub)
+      await fetchRecommendations('VM', projectIDs, isStub, location)
 
   const vmsToSize = await
     filterVMSizeRecommendations(recommendations)
@@ -68,9 +68,9 @@ const listVMResizeRecommendations = async (projectIDs, isStub) => {
  *         [{project: string, member: string, role: string,
  *           add: string, recommendationID: string, recommendationETag: string}]
  */
-const listIAMRecommendations = async (projectIDs, isStub) => {
+const listIAMRecommendations = async (projectIDs, isStub, location) => {
   const recommendations =
-      await fetchRecommendations('IAM', projectIDs, isStub)
+      await fetchRecommendations('IAM', projectIDs, isStub, location)
 
   const iamRecommendations = await
     filterIAMRecommendations(recommendations)
@@ -109,7 +109,7 @@ const fetchRecommendationsStub = async (type) => {
  *        [{ name: string, description: string, stateInfo: object, etag: string
  *            lastRefreshTime: datetime, content: object }]
  */
-const fetchRecommendations = async (type, projects, stub) => {
+const fetchRecommendations = async (type, projects, stub, location) => {
 
   if (stub) {
     return fetchRecommendationsStub(type)
@@ -130,10 +130,11 @@ const fetchRecommendations = async (type, projects, stub) => {
 
   // Create promises of requests to fetch recommendations
   const recommendationPromises = projects.map(project => request({
-    uri: `https://recommender.googleapis.com/v1beta1/projects/${project}/locations/global/recommenders/${typeURLPath}/recommendations`,
+    uri: `https://recommender.googleapis.com/v1beta1/projects/${project}/locations/${location}/recommenders/${typeURLPath}/recommendations`,
     method: 'GET',
-    headers: {
-      Authorization: `Bearer ${accessToken.token}`
+    headers: {      
+      Authorization: `Bearer ${accessToken.token}`,
+      'x-goog-user-project': `${project}`
     },
   }))
 
@@ -144,7 +145,7 @@ const fetchRecommendations = async (type, projects, stub) => {
       .filter(r => r.recommendations)
       .reduce((a, v) => [...a, ...v.recommendations], [])
 
-  return recommendationsFromAPI
+    return recommendationsFromAPI
 }
 
 /**
@@ -164,13 +165,14 @@ const getRecommendations = async (recommendationIDs) => {
   const accessToken = await authClient.getAccessToken()
 
   // Create promises of requests
-  const promises = recommendationIDs.map(id => {
+  const promises = recommendationIDs.map(id => {    
     const uri = `https://recommender.googleapis.com/v1beta1/${id}`
     return request({
       uri,
       method: 'GET',
       headers: {
-        Authorization: `Bearer ${accessToken.token}`
+        Authorization: `Bearer ${accessToken.token}`,
+        'x-goog-user-project': id.split('/')[1]
       }
     })
   })
@@ -199,7 +201,7 @@ const setRecommendationStatus = async (recommendationsIDsAndETags, newStatus) =>
   const accessToken = await authClient.getAccessToken()
 
   // Create promises of requests
-  const promises = recommendationsIDsAndETags.map(recommendation => {
+  const promises = recommendationsIDsAndETags.map(recommendation => {    
     const uri =
       `https://recommender.googleapis.com/v1beta1/${recommendation.id}:${newStatus}`
     console.log('setRecommendationStatus uri', uri)
@@ -207,7 +209,8 @@ const setRecommendationStatus = async (recommendationsIDsAndETags, newStatus) =>
       uri,
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${accessToken.token}`
+        Authorization: `Bearer ${accessToken.token}`,        
+        'x-goog-user-project': recommendation.id.split('/')[1]
       },
       json: {
         etag: recommendation.etag

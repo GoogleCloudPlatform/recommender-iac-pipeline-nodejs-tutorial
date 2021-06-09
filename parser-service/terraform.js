@@ -29,6 +29,9 @@ const stateBucket = storage.bucket(TERRAFORM_STATE_BUCKET)
 const fs = require('fs-extra')
 const path = require('path')
 
+const {Resource} = require('@google-cloud/resource');
+const resource = new Resource();
+
 /**
  * Pulls down current TF state from the GCS bucket
  *
@@ -79,6 +82,19 @@ const getVMResourcesByIdFromState = (state, vmList) => {
 }
 
 /**
+ * Fetch project number by the project's ID
+ *
+ * @param projectID The project's ID
+ * @return The project's number
+ */
+const getProjectNumberFromProjectID = async (projectID) => {
+  const project = resource.project(projectID)
+
+  projectInfo = await project.get()  
+  return projectInfo[0].metadata.projectNumber
+}
+
+/**
  * Compare the array created by parsing the recommendations payload to the
  * instances in the tf.state file to create an array of IAM recommendations
  *
@@ -87,13 +103,31 @@ const getVMResourcesByIdFromState = (state, vmList) => {
  * @return list of IAM members to be updated
  *         (also contains the TF resource name)
  */
-const getIAMBindingsFromState = (state, iamRecommendations) => {
+const getIAMBindingsFromState = async (state, iamRecommendations, isStub) => {
   const removeResourcesFound = []
+  
+  // Create a map of project IDs to project numbers
+  let projectMapping = new Map()
+  for (const resource of state.resources) {    
+    for (const instance of resource.instances) {
+      projectNumber = projectMapping.get(instance.attributes.project)
+      if (projectNumber == undefined) {
+        if (isStub) 
+          // For stub, we use the project ID as its number
+          projectNumber = instance.attributes.project
+        else
+          projectNumber = await getProjectNumberFromProjectID(instance.attributes.project)        
+        projectMapping.set(instance.attributes.project, projectNumber)
+      }
+    }
+  }
+  
   state.resources.forEach(resource => {
-    if (resource.type == 'google_project_iam_binding') {
+    if (resource.type == 'google_project_iam_binding') {      
       resource.instances.forEach(instance => {
-        iamRecommendations.forEach(recommendation => {
-          if (instance.attributes.project == recommendation.project &&
+        iamRecommendations.forEach(recommendation => {          
+          projectNumber = projectMapping.get(instance.attributes.project)
+          if (projectNumber == recommendation.project &&
               instance.attributes.role == recommendation.role &&
               instance.attributes.members.includes(recommendation.member)) {
                 const recommentationWithResourceName =
@@ -219,9 +253,11 @@ const getTFVariables = async (variableFilePath) => {
       await fs.readFile(variableFilePath)).toString()
     const lines = contents.split('\n')
     lines.forEach(line => {
-      const values = line.split('=')
-      variables[values[0].trim()] =
-        values[1].replace(/\"/g, "").trim()
+      const values = line.split('=')      
+      if (values.length == 2) {
+        variables[values[0].trim()] =
+          values[1].replace(/\"/g, "").trim()
+      }
     })
   }
 
@@ -309,14 +345,14 @@ const replaceServiceAccountValues = (tfContents) => {
  *         the repository
  */
 const findAndModifyIAMRoleBindings = async (repoPath, resources, destPath) => {
-
+  
   const recommendationsToClaim = []
 
   const writePath = destPath ? destPath : repoPath
   let originalFiles = await readAllTFFiles(repoPath)
-  tfFiles = await replaceVariableValuesInTFFiles(repoPath, originalFiles)
+  tfFiles = await replaceVariableValuesInTFFiles(repoPath, originalFiles)  
   tfFiles = replaceServiceAccountValues(tfFiles)
-
+  
   resources.forEach(resource => {
     originalFiles = tfFiles.map((file, index) => {
       let expr =
@@ -482,7 +518,7 @@ const replaceLine = (contents, lineNum, text) => {
  * @return list of recommendations and etags that have been claimed
  *         [{recommendationID: string, recommendationETag: string}]
  */
-const applyVMResizeRecommendations = async (repoName, vmResizeRecommendations) => {
+const applyVMResizeRecommendations = async (repoName, vmResizeRecommendations, isStub) => {
 
     let recommendationsToClaim = []
 
@@ -516,7 +552,7 @@ const applyVMResizeRecommendations = async (repoName, vmResizeRecommendations) =
  * @return list of recommendations and etags that have been claimed
  *         [{recommendationID: string, recommendationETag: string}]
  */
-const applyIAMRecommendations = async (repoName, iamRecommendations) => {
+const applyIAMRecommendations = async (repoName, iamRecommendations, isStub) => {
 
     let recommendationsToClaim = []
 
@@ -524,7 +560,7 @@ const applyIAMRecommendations = async (repoName, iamRecommendations) => {
     const tfState = await getTFState()
 
     // Find recommendation in state
-    let resourceNames = getIAMBindingsFromState(tfState, iamRecommendations)
+    let resourceNames = await getIAMBindingsFromState(tfState, iamRecommendations, isStub)
 
     // Make changes to file
     if (resourceNames.length > 0) {
