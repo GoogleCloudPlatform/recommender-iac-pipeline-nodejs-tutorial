@@ -291,7 +291,7 @@ const filterIAMRecommendations = (recommendations) => {
                   'cloudresourcemanager.googleapis.com/Project' &&
                 operation.path == '/iamPolicy/bindings/*/members/-' &&
                 operation.value == member &&
-                operation.resource.split(':')[1] == project
+                operation.resource.split('/').pop() == project
                 ) {
                   add = operation.pathFilters["/iamPolicy/bindings/*/role"]
                 }

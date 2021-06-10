@@ -125,7 +125,7 @@ const getIAMBindingsFromState = async (state, iamRecommendations, isStub) => {
       }
     }
   }
-  
+
   state.resources.forEach(resource => {
     if (resource.type == 'google_project_iam_binding') {      
       resource.instances.forEach(instance => {
@@ -136,7 +136,10 @@ const getIAMBindingsFromState = async (state, iamRecommendations, isStub) => {
               instance.attributes.members.includes(recommendation.member)) {
                 const recommentationWithResourceName =
                   {...recommendation, resourceName: resource.name}
-                  removeResourcesFound.push(recommentationWithResourceName)
+                // Override project number from recommendation with project ID
+                // because that is what Terraform uses
+                recommentationWithResourceName.project = instance.attributes.project
+                removeResourcesFound.push(recommentationWithResourceName)
               }
         })
       })
@@ -368,7 +371,7 @@ const findAndModifyIAMRoleBindings = async (repoPath, resources, destPath) => {
         resource.role +
         '".+?members\\s*=\\s*(\\[.+?"' +
         resource.member + '".+?\\]).+?}'
-
+      
       var reg = new RegExp(expr, 'gs')
       const matches = reg.exec(file.contents)
       if (matches) {
@@ -565,7 +568,7 @@ const applyIAMRecommendations = async (repoName, iamRecommendations, isStub) => 
 
     // Find recommendation in state
     let resourceNames = await getIAMBindingsFromState(tfState, iamRecommendations, isStub)
-
+    
     // Make changes to file
     if (resourceNames.length > 0) {
       recommendationsToClaim = await findAndModifyIAMRoleBindings(
