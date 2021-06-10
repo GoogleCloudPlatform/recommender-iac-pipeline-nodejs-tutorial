@@ -62,12 +62,16 @@ const getTFState = async () => {
  */
 const getVMResourcesByIdFromState = (state, vmList) => {
   const instancesFound = []
+  const instanceIdPrefixToRemove = "//compute.googleapis.com/"  
 
   for (const resource of state.resources) {
     if (resource.type == 'google_compute_instance') {
       resource.instances.forEach(instance => {
         vmList.forEach(vm => {
-          if (vm.instanceID == instance.attributes.self_link) {
+          // self_link and instanceID are not identical, but do have the same 
+          // instance path projects/[PROJECT]/zones/[ZONE]/instance/[INSTANCE]
+          if (vm.instanceID.substring(instanceIdPrefixToRemove.length) == 
+              instance.attributes.id) {
             instancesFound.push({
               ...vm,
               tfResourceName: resource.name
@@ -528,7 +532,7 @@ const applyVMResizeRecommendations = async (repoName, vmResizeRecommendations, i
     // Find recommendation in state
     let resourceNames = getVMResourcesByIdFromState(
       tfState, vmResizeRecommendations)
-
+  
     // Make changes to file
     if (resourceNames.length > 0) {
       recommendationsToClaim = await findAndModifyInstances(

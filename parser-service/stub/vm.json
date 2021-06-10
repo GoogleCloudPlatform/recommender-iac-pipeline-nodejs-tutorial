@@ -38,7 +38,7 @@
             {
               "action": "replace",
               "resourceType": "compute.googleapis.com/Instance",
-              "resource" : "https://www.googleapis.com/compute/v1/projects/__PROJECT_ID__/zones/us-central1-b/instances/tf-compute-1",
+              "resource" : "//compute.googleapis.com/projects/__PROJECT_ID__/zones/us-central1-b/instances/tf-compute-1",
               "path": "/machineType",
               "value": "zones/us-central1-f/machineTypes/f1-micro"
             }
