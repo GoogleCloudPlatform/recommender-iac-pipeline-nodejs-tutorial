@@ -41,6 +41,7 @@ const applyRecommendations = async (req, res) => {
     console.log('Parse Recommendation request received', req.body)
     const repoName = req.body.repo
     const projectIDs = req.body.projects
+    const location = req.body.location
     const type = req.params.type.toUpperCase()
     const isStub = req.body.stub ? true : false
 
@@ -61,7 +62,7 @@ const applyRecommendations = async (req, res) => {
     }
 
     // Fetch Recommendation from Recommender
-    const recommendations = await listRecommendationsFn(projectIDs, isStub)
+    const recommendations = await listRecommendationsFn(projectIDs, isStub, location)
 
     if (recommendations.length == 0) {
       res.end('Nothing to apply')
@@ -73,7 +74,7 @@ const applyRecommendations = async (req, res) => {
       `git@${BASE_REPO}/${repoName}.git`, repoName)
 
     const recommendationsToClaim = await applyRecommendationsFn(
-      repoName, recommendations)
+      repoName, recommendations, isStub)
 
     if (recommendationsToClaim.length > 0) {
       // Push changes to git

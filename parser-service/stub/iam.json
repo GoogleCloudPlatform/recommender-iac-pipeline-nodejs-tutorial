@@ -27,7 +27,7 @@
       "resourceChanges": {
         "iamPolicyChangeNewRole": {
           "resourceType": "cloudresourcemanager.googleapis.com/Project",
-          "resourceName": "//cloudresourcemanager.googleapis.com/projects/google.com:__PROJECT_ID__",
+          "resourceName": "//cloudresourcemanager.googleapis.com/projects/__PROJECT_ID__",
           "resourceChangeType": "UPDATE",
           "changeSpec": {
             "policyChange": {
@@ -36,14 +36,14 @@
                   "action": "ADD",
                   "bindingTuple": {
                     "member": "serviceAccount:terraformtest@__PROJECT_ID__.iam.gserviceaccount.com",
-                    "role": "projects/google.com:__PROJECT_ID__/roles/viewer"
+                    "role": "roles/viewer"
                   }
                 },
                 {
                   "action": "REMOVE",
                   "bindingTuple": {
                     "member": "serviceAccount:terraformtest@__PROJECT_ID__.iam.gserviceaccount.com",
-                    "role": "projects/google.com:__PROJECT_ID__/roles/editor"
+                    "role": "roles/editor"
                   }
                 }
               ]
@@ -59,23 +59,23 @@
             {
               "action": "add",
               "resourceType": "cloudresourcemanager.googleapis.com/Project",
-              "resource": "//cloudresourcemanager.googleapis.com/projects/google.com:__PROJECT_ID__",
+              "resource": "//cloudresourcemanager.googleapis.com/projects/__PROJECT_ID__",
               "path": "/iamPolicy/bindings/*/members/-",
               "value": "serviceAccount:terraformtest@__PROJECT_ID__.iam.gserviceaccount.com",
               "pathFilters": {
                 "/iamPolicy/bindings/*/condition/expression": "",
-                "/iamPolicy/bindings/*/role": "projects/google.com:__PROJECT_ID__/roles/viewer"
+                "/iamPolicy/bindings/*/role": "roles/viewer"
               }
             },
             {
               "action": "remove",
               "resourceType": "cloudresourcemanager.googleapis.com/Project",
-              "resource": "//cloudresourcemanager.googleapis.com/projects/google.com:__PROJECT_ID__",
+              "resource": "//cloudresourcemanager.googleapis.com/projects/__PROJECT_ID__",
               "path": "/iamPolicy/bindings/*/members/*",
               "pathFilters": {
                 "/iamPolicy/bindings/*/condition/expression": "",
                 "/iamPolicy/bindings/*/members/*": "serviceAccount:terraformtest@__PROJECT_ID__.iam.gserviceaccount.com",
-                "/iamPolicy/bindings/*/role": "projects/google.com:__PROJECT_ID__/roles/editor"
+                "/iamPolicy/bindings/*/role": "roles/editor"
               }
             }
           ]
