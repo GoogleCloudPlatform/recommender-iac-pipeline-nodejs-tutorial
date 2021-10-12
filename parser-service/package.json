@@ -10,21 +10,21 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@google-cloud/firestore": "^2.2.7",
+    "@google-cloud/firestore": "^4.15.1",
     "@google-cloud/resource": "^1.2.1",
-    "@google-cloud/storage": "^2.5.0",
+    "@google-cloud/storage": "^5.15.0",
     "@octokit/rest": "^16.28.2",
     "body-parser": "^1.19.0",
     "express": "^4.17.1",
     "fs-extra": "^8.0.1",
-    "googleapis": "^42.0.0",
+    "googleapis": "^88.2.0",
     "line-number": "^0.1.0",
-    "nodemon": "^1.19.3",
+    "nodemon": "^2.0.13",
     "request": "^2.88.0",
     "request-promise": "^4.2.4",
     "simple-git": "^1.113.0"
   },
   "devDependencies": {
-    "mocha": "^6.2.0"
+    "mocha": "^9.1.2"
   }
 }
