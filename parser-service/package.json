@@ -22,7 +22,7 @@
     "nodemon": "^2.0.13",
     "request": "^2.88.0",
     "request-promise": "^4.2.4",
-    "simple-git": "^1.113.0"
+    "simple-git": "^3.5.0"
   },
   "devDependencies": {
     "mocha": "^9.1.2"
