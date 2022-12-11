@@ -15,7 +15,7 @@
     "@google-cloud/storage": "^5.15.0",
     "@octokit/rest": "^16.28.2",
     "body-parser": "^1.19.0",
-    "express": "^4.17.1",
+    "express": "^4.17.3",
     "fs-extra": "^8.0.1",
     "googleapis": "^88.2.0",
     "line-number": "^0.1.0",
