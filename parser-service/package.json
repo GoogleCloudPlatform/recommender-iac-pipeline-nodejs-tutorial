@@ -19,7 +19,7 @@
     "fs-extra": "^8.0.1",
     "googleapis": "^88.2.0",
     "line-number": "^0.1.0",
-    "nodemon": "^2.0.13",
+    "nodemon": "^2.0.20",
     "request": "^2.88.0",
     "request-promise": "^4.2.4",
     "simple-git": "^1.113.0"
