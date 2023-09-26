@@ -19,93 +19,66 @@
  * http service is invoked.
  */
 
-const recommender = require('./recommender')
-const terraform = require('./terraform')
-const sourceControl = require('./sourcecontrol')
-const github = require('./github')
-const db = require('./db')
+import * as recommender from './recommender.js';
+import * as terraform from './terraform.js';
+import * as sourceControl from './sourcecontrol.js';
+import * as github from './github.js';
+import * as db from './db.js';
 
-const BASE_REPO = process.env.GITHUB_ACCOUNT
+const BASE_REPO = process.env.GITHUB_ACCOUNT;
 
-/**
- * This function fetches recommendations from the Recommender API. It invokes
- * supporting methods to filter and parse these recommendations, download
- * supporting files, committing to Git, generating a pull request and updating
- * the Recommender API to mark recommendation status as Claimed.
- *
- * @param req is the request object
- * @param res is the response object
- */
 const applyRecommendations = async (req, res) => {
   try {
-    console.log('Parse Recommendation request received', req.body)
-    const repoName = req.body.repo
-    const projectIDs = req.body.projects
-    const location = req.body.location
-    const type = req.params.type.toUpperCase()
-    const isStub = req.body.stub ? true : false
-
-    let listRecommendationsFn
-    let applyRecommendationsFn
+    const { body, params } = req;
+    const { repo: repoName, projects: projectIDs, location, stub } = body;
+    const type = params.type.toUpperCase();
+    let listRecommendationsFn, applyRecommendationsFn;
 
     switch (type) {
       case 'VM':
-        listRecommendationsFn = recommender.listVMResizeRecommendations
-        applyRecommendationsFn = terraform.applyVMResizeRecommendations
-        break
+        listRecommendationsFn = recommender.listVMResizeRecommendations;
+        applyRecommendationsFn = terraform.applyVMResizeRecommendations;
+        break;
       case 'IAM':
-        listRecommendationsFn = recommender.listIAMRecommendations
-        applyRecommendationsFn = terraform.applyIAMRecommendations
-        break
+        listRecommendationsFn = recommender.listIAMRecommendations;
+        applyRecommendationsFn = terraform.applyIAMRecommendations;
+        break;
       default:
-        res.status(500).send('Unknown operation')
+        return res.status(500).send('Unknown operation');
     }
 
-    // Fetch Recommendation from Recommender
-    const recommendations = await listRecommendationsFn(projectIDs, isStub, location)
+    const recommendations = await listRecommendationsFn(projectIDs, Boolean(stub), location);
 
-    if (recommendations.length == 0) {
-      res.end('Nothing to apply')
-      return
+    if (recommendations.length === 0) {
+      return res.end('Nothing to apply');
     }
 
-    // Download Source Repository
-    await sourceControl.cloneRepository(
-      `git@${BASE_REPO}/${repoName}.git`, repoName)
+    await sourceControl.cloneRepository(`git@${BASE_REPO}/${repoName}.git`, repoName);
 
-    const recommendationsToClaim = await applyRecommendationsFn(
-      repoName, recommendations, isStub)
+    const recommendationsToClaim = await applyRecommendationsFn(repoName, recommendations, Boolean(stub));
 
     if (recommendationsToClaim.length > 0) {
-      // Push changes to git
-      const commitMessage = type == 'VM' ?
-        `Recommended VM Rightsizing as on ${(new Date()).toLocaleString()}` :
-        `Recommended IAM Updates as on ${(new Date()).toLocaleString()}`
+      const commitMessage = type === 'VM'
+        ? `Recommended VM Rightsizing as on ${new Date().toLocaleString()}`
+        : `Recommended IAM Updates as on ${new Date().toLocaleString()}`;
 
-      const commit =
-        await sourceControl.commitChanges(commitMessage, repoName)
+      const commit = await sourceControl.commitChanges(commitMessage, repoName);
 
-      // Create pull request
-      await github.createPullRequest(
-        `git@${BASE_REPO}/${repoName}.git`, commit.branch, commitMessage)
+      await github.createPullRequest(`git@${BASE_REPO}/${repoName}.git`, commit.branch, commitMessage);
 
-      // Write commit to database
-      await db.createCommit(repoName, commit.commit,
-          recommendationsToClaim, isStub)
+      await db.createCommit(repoName, commit.commit, recommendationsToClaim, Boolean(stub));
 
-      // Claim recommendations
-      if (!isStub) {
-        await recommender.setRecommendationStatus(
-          recommendationsToClaim, 'markClaimed')
+      if (!stub) {
+        await recommender.setRecommendationStatus(recommendationsToClaim, 'markClaimed');
       }
     }
 
-    res.sendStatus(201).end()
-  } catch(e) {
-    console.error(e)
-    res.sendStatus(500).end(e.toString())
+    res.sendStatus(201).end();
+  } catch (e) {
+    console.error(e);
+    res.sendStatus(500).end(e.toString());
   }
-}
+};
 
 /**
  * This handles the route called by the Pub/Sub subscription after the Cloud
@@ -172,7 +145,4 @@ const ci = async (req, res) => {
   }
 }
 
-module.exports = {
-  applyRecommendations,
-  ci
-}
+export { applyRecommendations, ci };

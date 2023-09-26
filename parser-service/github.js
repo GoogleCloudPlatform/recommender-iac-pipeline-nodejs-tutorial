@@ -18,68 +18,58 @@
  * github.js uses the Octokit library to invoke GitHub specific tasks. It is
  * used to create a pull request in GitHub.
  */
+ import { Octokit } from '@octokit/rest';
 
-const Octokit = require('@octokit/rest')
-const octokit = new Octokit({
-  auth: process.env.GITHUB_PAT
-})
-
-/**
- * Creates a pull request in GitHub by calling the API.
- *
- * @param repoName is the name of the repo in github.com:<account>/<repo>
- *                 format
- * @param branchName The branch for which the pull request should be created
- * @param body The body / description of the pull request passed in as a string
- */
-const createPullRequest = async (repoName, branchName, body) => {
-
-  const repoComponents = repoName.split('/')
-  const owner = repoComponents[0].split(':')[1]
-  const repo = repoComponents[1].split('.')[0]
-
-  await octokit.pulls.create({
-    owner: owner,
-    repo: repo,
-    title: body,
-    head: branchName,
-    base: 'master',
-    body: body
-  })
-}
-
-/**
- * Gets the Short SHAs for the parent commits of this specific commits. This
- * is used to identify whether the current commit had any parent that was
- * associated to applied recommendations
- *
- * @param repoName is the name of the repo in github.com:<account>/<repo>
- *                 format
- * @param commitID The full commit ID
- * @return list of commit ids (short SHA)
- */
-const getParentCommits = async (repoName, commitId) => {
-  const repoComponents = repoName.split('/')
-  const owner = repoComponents[0].split(':')[1]
-  const repo = repoComponents[1].split('.')[0]
-
-  const commit = await octokit.git.getCommit({
-    owner: owner,
-    repo: repo,
-    commit_sha: commitId
-  })
-
-  if (commit.data) {
-    if (commit.data.parents) {
-      return commit.data.parents.map(p => p.sha.substr(0, 7))
-    }
-  }
-
-  return []
-}
-
-module.exports = {
-  createPullRequest,
-  getParentCommits
-}
-
+ // Initialize Octokit with GitHub Personal Access Token
+ const octokit = new Octokit({
+   auth: process.env.GITHUB_PAT,
+ });
+ 
+ // Helper function to destructure repo name to [owner, repo]
+ const getRepoComponents = (repoName) => {
+   const [ownerPart, repoPart] = repoName.split('/');
+   const owner = ownerPart.split(':')[1];
+   const repo = repoPart.split('.')[0];
+   return { owner, repo };
+ };
+ 
+ /**
+  * Create a pull request on GitHub.
+  * @param {string} repoName - Full repository name as 'github.com:<account>/<repo>'.
+  * @param {string} branchName - Name of the branch for which PR will be created.
+  * @param {string} body - Description for the pull request.
+  */
+ const createPullRequest = async (repoName, branchName, body) => {
+   const { owner, repo } = getRepoComponents(repoName);
+   await octokit.pulls.create({
+     owner,
+     repo,
+     title: body,
+     head: branchName,
+     base: 'master',
+     body,
+   });
+ };
+ 
+ /**
+  * Fetch parent commits' short SHAs for a given commit.
+  * @param {string} repoName - Full repository name as 'github.com:<account>/<repo>'.
+  * @param {string} commitId - Commit SHA for which parent commits are needed.
+  * @returns {Promise<Array<string>>} - Array of short SHAs of parent commits.
+  */
+ const getParentCommits = async (repoName, commitId) => {
+   const { owner, repo } = getRepoComponents(repoName);
+   const { data: commitData } = await octokit.git.getCommit({
+     owner,
+     repo,
+     commit_sha: commitId,
+   });
+ 
+   return commitData?.parents?.map(parent => parent.sha.substr(0, 7)) || [];
+ };
+ 
+ export {
+   createPullRequest,
+   getParentCommits,
+ };
+ 
