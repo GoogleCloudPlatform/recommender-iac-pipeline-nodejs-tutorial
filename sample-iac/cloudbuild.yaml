@@ -13,8 +13,8 @@
 # limitations under the License.
 
 steps:
-- name: hashicorp/terraform:0.12.0
+- name: hashicorp/terraform:1.5
   args: ['init']
 
-- name: hashicorp/terraform:0.12.0
+- name: hashicorp/terraform:1.5
   args: ['apply', '-auto-approve']
