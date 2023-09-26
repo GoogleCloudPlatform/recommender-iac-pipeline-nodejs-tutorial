@@ -41,7 +41,8 @@ called by this service. Please note that the interactions are specifically
 outlined for 'IAMRoleBindings' flow. The VM rightsizing flow follows a similar
 interaction pattern.
 
-![Recommender service sequence diagram:](https://storage.googleapis.com/recommender-assets/Recommender%20Parser%20Service%20Sequence%20Flow.png)
+![Recommender service sequence diagram:](https://cloud.google.com/static/recommender/docs/images/iac-architecture.svg)
+
 
 ## License
 
