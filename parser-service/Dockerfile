@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-FROM node:10-alpine
+FROM node:20-alpine
 
 # Install git in the container
 RUN apk update && \

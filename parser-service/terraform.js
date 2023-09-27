@@ -514,10 +514,9 @@ const applyIAMRecommendations = async (repoName, iamRecommendations, isStub) => 
   return recommendationsToClaim;
 };
 
-
-module.exports = {
+export {
   GIT_WORK_DIR_PATH,
   applyVMResizeRecommendations,
   applyIAMRecommendations
-}
+};
 
