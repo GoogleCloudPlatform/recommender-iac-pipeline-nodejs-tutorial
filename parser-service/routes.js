@@ -27,6 +27,15 @@ import * as db from './db.js';
 
 const BASE_REPO = process.env.GITHUB_ACCOUNT;
 
+/**
+ * This function fetches recommendations from the Recommender API. It invokes
+ * supporting methods to filter and parse these recommendations, download
+ * supporting files, committing to Git, generating a pull request and updating
+ * the Recommender API to mark recommendation status as Claimed.
+ *
+ * @param req is the request object
+ * @param res is the response object
+ */
 const applyRecommendations = async (req, res) => {
   try {
     const { body, params } = req;

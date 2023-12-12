@@ -52,7 +52,10 @@
  };
  
  /**
-  * Fetch parent commits' short SHAs for a given commit.
+  * Gets the Short SHAs for the parent commits of this specific commits. This
+  * is used to identify whether the current commit had any parent that was
+  * associated to applied recommendations
+  *
   * @param {string} repoName - Full repository name as 'github.com:<account>/<repo>'.
   * @param {string} commitId - Commit SHA for which parent commits are needed.
   * @returns {Promise<Array<string>>} - Array of short SHAs of parent commits.

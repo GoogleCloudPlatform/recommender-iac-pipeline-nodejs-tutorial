@@ -30,7 +30,10 @@ const app = express()
 
 // Using express.json middleware instead of body-parser
 app.use(express.json())
-
+/**
+ * Main entry point to the service. It sets up the container with the SSH keys
+ * that are needed to clone the IaC repository, and starts the express server
+ */
 const run = async () => {
   try {
     await downloadFiles(SSH_KEYS_BUCKET, '/root/.ssh', '500')
@@ -43,8 +46,16 @@ const run = async () => {
   }
 }
 
-// Routes
+/**
+ * Entry point route for pipeline execution. This method starts the pipeline.
+ * The recommendation type is either 'vm' or 'iam' that the pipeline
+ * needs to retrieve Recommender recommendations for.
+ */
 app.post('/recommendation/:type', applyRecommendations)
+/**
+ * This route writes the Commit SHA and the Recommender recommendations IDs to
+ * Cloud Firestore.
+ */
 app.post('/ci', ci)
 
 // Start the application

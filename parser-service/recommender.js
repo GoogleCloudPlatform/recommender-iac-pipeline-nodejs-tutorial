@@ -26,6 +26,11 @@ import axios from 'axios';
 import sampleRecommendationVM from './stub/vm.json' assert {type:'json'};
 import sampleRecommendationIAM from './stub/iam.json' assert {type:'json'};
 
+/**
+ * Asynchronously fetches and returns a Google authentication client.
+ * 
+ * @returns {Promise<GoogleAuth>} A promise that resolves to the Google authentication client.
+ */
 const fetchAuthClient = async () => {
   const auth = new google.auth.GoogleAuth({
     scopes: ['https://www.googleapis.com/auth/cloud-platform'],
@@ -33,9 +38,24 @@ const fetchAuthClient = async () => {
   return await auth.getClient();
 };
 
+/**
+ * Fetches recommendation stubs for testing purposes.
+ * 
+ * @param {string} type The type of recommendation to fetch ('VM' or 'IAM').
+ * @returns {Promise<Object>} A promise that resolves to the recommendation data.
+ */
 const fetchRecommendationsStub = async (type) =>
   type === 'VM' ? sampleRecommendationVM : sampleRecommendationIAM;
 
+/**
+ * Asynchronously fetches recommendations from the Google Recommender API or stubs based on the specified type.
+ *
+ * @param {string} type The type of recommendations to fetch ('VM' or 'IAM').
+ * @param {Array<string>} projects An array of project IDs for which recommendations are fetched.
+ * @param {boolean} stub Determines whether to use stub data for recommendations.
+ * @param {string} location The location for which recommendations are fetched.
+ * @returns {Promise<Array>} A promise that resolves to an array of recommendations.
+ */
 const fetchRecommendations = async (type, projects, stub, location) => {
   if (stub) return fetchRecommendationsStub(type);
 
@@ -62,6 +82,14 @@ const fetchRecommendations = async (type, projects, stub, location) => {
     .flatMap((r) => r.recommendations);
 };
 
+/**
+ * Lists VM resize recommendations for the given project IDs.
+ * 
+ * @param {Array<string>} projectIDs An array of project IDs to fetch VM resize recommendations for.
+ * @param {boolean} isStub Whether to use stub data.
+ * @param {string} location The location for the recommendations.
+ * @returns {Promise<Array>} A promise that resolves to an array of VM resize recommendations.
+ */
 const listVMResizeRecommendations = async (projectIDs, isStub, location) => {
   const recommendations = await fetchRecommendations('VM', projectIDs, isStub, location);
   const vmsToSize = filterVMSizeRecommendations(recommendations);
@@ -69,6 +97,14 @@ const listVMResizeRecommendations = async (projectIDs, isStub, location) => {
   return vmsToSize;
 };
 
+/**
+ * Lists IAM recommendations for the given project IDs.
+ * 
+ * @param {Array<string>} projectIDs An array of project IDs to fetch IAM recommendations for.
+ * @param {boolean} isStub Whether to use stub data.
+ * @param {string} location The location for the recommendations.
+ * @returns {Promise<Array>} A promise that resolves to an array of IAM recommendations.
+ */
 const listIAMRecommendations = async (projectIDs, isStub, location) => {
   const recommendations = await fetchRecommendations('IAM', projectIDs, isStub, location);
   const iamRecommendations = filterIAMRecommendations(recommendations);
@@ -76,6 +112,13 @@ const listIAMRecommendations = async (projectIDs, isStub, location) => {
   return iamRecommendations;
 };
 
+/**
+ * Sets the status for a list of recommendations.
+ * 
+ * @param {Array<Object>} recommendationsIDsAndETags An array of objects containing recommendation IDs and their corresponding ETags.
+ * @param {string} newStatus The new status to set for the recommendations.
+ * @returns {Promise<void>} A promise that resolves when the status updates are complete.
+ */
 const setRecommendationStatus = async (recommendationsIDsAndETags, newStatus) => {
   const authClient = await fetchAuthClient();
   const accessToken = await authClient.getAccessToken();
@@ -111,6 +154,12 @@ const setRecommendationStatus = async (recommendationsIDsAndETags, newStatus) =>
   await Promise.all(promises);
 };
 
+/**
+ * Fetches recommendation details for a given array of recommendation IDs.
+ *
+ * @param {Array<string>} recommendationIDs An array of recommendation IDs to fetch details for.
+ * @returns {Promise<Array>} A promise that resolves to an array of recommendation details.
+ */
 const getRecommendations = async (recommendationIDs) => {
   const authClient = await fetchAuthClient();
   const accessToken = await authClient.getAccessToken();
@@ -169,9 +218,12 @@ const filterVMSizeRecommendations = (recommendations) => {
 }
 
 
-// Review the recommendations payload to create an array of instances for
-// active recommendations. This array will comprise of the instance selfLink and
-// recommended machine type
+/**
+ * Filters and processes IAM recommendations from a given list of recommendations.
+ * 
+ * @param {Array<Object>} recommendations An array of recommendation objects to be processed.
+ * @returns {Array<Object>} An array of processed IAM recommendations.
+ */
 const filterIAMRecommendations = (recommendations) => {
   const removeRecommendations = []
 
@@ -222,6 +274,12 @@ const filterIAMRecommendations = (recommendations) => {
   return removeRecommendations
 }
 
+/**
+ * Processes and formats a role string from its full path.
+ * 
+ * @param {string} role The full path of the role to be processed.
+ * @returns {string} The processed role string.
+ */
 const processRole = (role) => {
   const splitPortions = role.split('/');
   return `roles/${splitPortions[splitPortions.length - 1]}`;
