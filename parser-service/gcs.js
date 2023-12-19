@@ -19,43 +19,44 @@
  * downloading specific files from a bucket.
  */
 
-const { Storage } = require('@google-cloud/storage')
-const fs = require('fs-extra')
+import { Storage } from '@google-cloud/storage';
+import fs from 'fs-extra';
 
-const storage = new Storage()
+const storage = new Storage();
 
 /**
- * Downloads all the files in a Bucket from GCS. Once the files have been
- * downloaded it also sets permissions on the files.
+ * Downloads all the files in a bucket from GCS. Once the files have been
+ * downloaded, it also sets permissions on the files.
  *
- * @param bucketName is the name of the repo in github.com:<account>/<repo>
- *                 format
- * @param dest The destination directory where the files should be downloaded
- * @param permissions a set of *inx permissions that need to be added to the
- *                    files after download
+ * @param {string} bucketName - Name of the bucket in Google Cloud Storage
+ * @param {string} dest - The destination directory where the files should be downloaded
+ * @param {string} permissions - A set of *nix permissions that need to be added to the files after download
+ * @returns {Promise<void>}
  */
 const downloadFiles = async (bucketName, dest, permissions) => {
-  const [files] = await storage.bucket(bucketName).getFiles()
+  try {
+    const [files] = await storage.bucket(bucketName).getFiles();
+    const fileNames = files.map(f => f.name);
 
-  const fileNames = files.map(f => f.name)
+    const downloadPromises = fileNames.map(filename =>
+      storage
+        .bucket(bucketName)
+        .file(filename)
+        .download({ destination: `${dest}/${filename}` })
+    );
 
-  const downloadPromises =
-    fileNames
-      .map(filename => storage.bucket(bucketName).file(filename).download({
-        destination: `${dest}/${filename}`
-      }))
+    await Promise.all(downloadPromises);
 
+    if (permissions) {
+      const permissionChangePromises = fileNames.map(filename =>
+        fs.chmod(`${dest}/${filename}`, permissions)
+      );
 
-  await Promise.all(downloadPromises)
-
-  if (permissions) {
-    const permissionChangePromises =
-      fileNames.map(filename => fs.chmod(`${dest}/${filename}`, permissions))
-
-      await Promise.all(permissionChangePromises)
+      await Promise.all(permissionChangePromises);
+    }
+  } catch (error) {
+    console.error(`Failed to download files from bucket ${bucketName}:`, error);
   }
-}
+};
 
-module.exports = {
-  downloadFiles
-}
+export { downloadFiles };

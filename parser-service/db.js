@@ -21,69 +21,56 @@
  * loop.
  */
 
-const {Firestore} = require('@google-cloud/firestore')
+import { Firestore } from '@google-cloud/firestore';
 
-const firestore = new Firestore()
-
-/**
- * Create a record in the database (Firestore) for the commit that was created.
- *
- * @param repoName is the name of the repo in github.com:<account>/<repo>
- *                 format
- * @param commitID is the Short SHA for the commit
- * @param recommendations is the a list of recommendation objects containing
- *                        an id and an etag
- *                        [{id: string,
- *                          etag: string}]
- * @param stub is written to the DB so that the next stage knows that it needs
- *             to mock the call to the recommender api
- */
-const createCommit = async (repoName, commitID, recommendations, stub) => {
-
-  const recommendationIDs = recommendations.map(r => r.id)
-  const recommendationEtags = recommendations.map(r => r.etag)
-
-  const uniqueID = `${repoName}-${commitID}`
-
-  const document = firestore.doc(`applied_recommendations/${uniqueID}`)
-
-  await document.set({
-    commitID: commitID,
-    repoName: repoName,
-    recommendationIDs: recommendationIDs,
-    recommendationEtags: recommendationEtags,
-    stub: stub,
-    status: 'Pull Request Created'
-  })
-}
+const firestore = new Firestore();
 
 /**
- * Gets the commit / record from the database.
+ * Create a record in the database (Firestore) for the created commit.
  *
- * @param repoName is the name of the repo in github.com:<account>/<repo>
- *                 format
- * @param commitID is the Short SHA for the commit
- * @return a list of recommendation IDs from Firestore
+ * @param {string} repoName - Name of the repo in github.com:<account>/<repo> format
+ * @param {string} commitID - Short SHA for the commit
+ * @param {Array<Object>} recommendations - List of recommendation objects containing an id and an etag
+ * @param {boolean} stub - Written to the DB so the next stage knows it needs to mock the call to the Recommender API
+ * @returns {Promise<void>}
  */
-const getCommit = async (repoName, commitID) => {
-
-  const uniqueID = `${repoName}-${commitID}`
-
-  const document = firestore.doc(`applied_recommendations/${uniqueID}`)
-
-  const doc = await document.get()
-  console.log('Doc from firestore', doc.data())
-
-  if (doc.data()) {
-    if (!doc.data().stub) {
-      return doc.data().recommendationIDs
-    }
+export const createCommit = async (repoName, commitID, recommendations, stub) => {
+  try {
+    const recommendationIDs = recommendations.map(r => r.id);
+    const recommendationEtags = recommendations.map(r => r.etag);
+    const uniqueID = `${repoName}-${commitID}`;
+    const document = firestore.doc(`applied_recommendations/${uniqueID}`);
+    await document.set({
+      commitID,
+      repoName,
+      recommendationIDs,
+      recommendationEtags,
+      stub,
+      status: 'Pull Request Created'
+    });
+  } catch (error) {
+    console.error(`Failed to create commit in Firestore for ${repoName}:`, error);
   }
+};
 
-  return []
-}
-
-module.exports = {
-  createCommit,
-  getCommit
-}
+/**
+ * Gets the commit/record from the database.
+ *
+ * @param {string} repoName - Name of the repo in github.com:<account>/<repo> format
+ * @param {string} commitID - Short SHA for the commit
+ * @returns {Promise<Array<string>>} - A list of recommendation IDs from Firestore
+ */
+export const getCommit = async (repoName, commitID) => {
+  try {
+    const uniqueID = `${repoName}-${commitID}`;
+    const document = firestore.doc(`applied_recommendations/${uniqueID}`);
+    const doc = await document.get();
+    if (doc.exists && !doc.data().stub) {
+      return doc.data().recommendationIDs;
+    }
+    return [];
+  } catch (error) {
+    console.error(`Failed to get commit from Firestore for ${repoName}:`, error);
+    return [];
+  }
+};

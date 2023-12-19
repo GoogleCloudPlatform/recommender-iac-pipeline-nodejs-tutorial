@@ -14,29 +14,36 @@
  * limitations under the License.
  */
 
-const express = require('express')
-const bodyParser = require('body-parser')
+// re-wrote to ES6
+import express from 'express'
+import { downloadFiles } from './gcs.js'
+import { applyRecommendations, ci } from './routes.js'
+import dotenv from 'dotenv'
 
-const gcs = require('./gcs')
-const routes = require('./routes')
+// Load environment variables from .env file
+dotenv.config()
 
 const PORT = process.env.PORT || 8080
 const SSH_KEYS_BUCKET = process.env.SSH_KEYS_BUCKET
 
 const app = express()
-app.use(bodyParser.json())
 
+// Using express.json middleware instead of body-parser
+app.use(express.json())
 /**
  * Main entry point to the service. It sets up the container with the SSH keys
  * that are needed to clone the IaC repository, and starts the express server
  */
 const run = async () => {
+  try {
+    await downloadFiles(SSH_KEYS_BUCKET, '/root/.ssh', '500')
 
-  await gcs.downloadFiles(SSH_KEYS_BUCKET, '/root/.ssh', '500')
-
-  app.listen(PORT, () => {
-    console.log("Server started")
-  })
+    app.listen(PORT, () => {
+      console.log(`Server started on port ${PORT}`)
+    })
+  } catch (error) {
+    console.error("Failed to start server:", error)
+  }
 }
 
 /**
@@ -44,12 +51,12 @@ const run = async () => {
  * The recommendation type is either 'vm' or 'iam' that the pipeline
  * needs to retrieve Recommender recommendations for.
  */
-app.post('/recommendation/:type', routes.applyRecommendations)
-
+app.post('/recommendation/:type', applyRecommendations)
 /**
  * This route writes the Commit SHA and the Recommender recommendations IDs to
  * Cloud Firestore.
  */
-app.post('/ci', routes.ci)
+app.post('/ci', ci)
 
+// Start the application
 run()

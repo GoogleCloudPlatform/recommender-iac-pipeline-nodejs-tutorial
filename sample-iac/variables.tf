@@ -15,13 +15,13 @@
  */
 
 variable "projectId" {
-  type = "string"
+  type = string
 }
 
 variable "serviceAccountName" {
-  type = "string"
+  type = string
 }
 
 variable "serviceAccountDisplayName" {
-  type = "string"
+  type = string
 }

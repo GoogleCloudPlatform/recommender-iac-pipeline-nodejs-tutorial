@@ -20,206 +20,162 @@
  * recommendations.
  */
 
-const sampleRecommendationVM = require('./stub/vm.json')
-const sampleRecommendationIAM = require('./stub/iam.json')
 
-const {google} = require('googleapis')
-const request = require('request-promise')
+import { google } from 'googleapis';
+import axios from 'axios';
+import sampleRecommendationVM from './stub/vm.json' assert {type:'json'};
+import sampleRecommendationIAM from './stub/iam.json' assert {type:'json'};
 
 /**
- * Invoke the Recommender API and filter recommendations by VM Resize
- * recommendations
- *
- * @param projectIDs is the list of GCP project IDs for which the service should
- *                 pull recommendations from the Recommender API. These project
- *                 IDs should map to the corresponding IaC repository
- *                 [string]
- * @param isStub to determine if the invocation of the Recommender API
- *        should be mocked.
- *        boolean
- * @return filtered VM recommendations
- *         [{instanceID: string, size: string, recommendationID: string,
- *           recommendationETag: string}]
+ * Asynchronously fetches and returns a Google authentication client.
+ * 
+ * @returns {Promise<GoogleAuth>} A promise that resolves to the Google authentication client.
  */
-const listVMResizeRecommendations = async (projectIDs, isStub, location) => {
-  const recommendations =
-      await fetchRecommendations('VM', projectIDs, isStub, location)
-
-  const vmsToSize = await
-    filterVMSizeRecommendations(recommendations)
-
-  console.log('Completed listVMResizeRecommendations',
-    JSON.stringify(vmsToSize))
-
-  return vmsToSize
-}
+const fetchAuthClient = async () => {
+  const auth = new google.auth.GoogleAuth({
+    scopes: ['https://www.googleapis.com/auth/cloud-platform'],
+  });
+  return await auth.getClient();
+};
 
 /**
- * Invoke the Recommender API and filter recommendations by IAM role change
- * recommendations
- *
- * @param projectIDs is the list of GCP project IDs for which the service should
- *                 pull recommendations from the Recommender API. These project
- *                 IDs should map to the corresponding IaC repository
- *                 [string]
- * @param isStub boolean to determine if the invocation of the Recommender API
- *             should be mocked.
- * @return filtered IAM recommendations
- *         [{project: string, member: string, role: string,
- *           add: string, recommendationID: string, recommendationETag: string}]
+ * Fetches recommendation stubs for testing purposes.
+ * 
+ * @param {string} type The type of recommendation to fetch ('VM' or 'IAM').
+ * @returns {Promise<Object>} A promise that resolves to the recommendation data.
  */
-const listIAMRecommendations = async (projectIDs, isStub, location) => {
-  const recommendations =
-      await fetchRecommendations('IAM', projectIDs, isStub, location)
-
-  const iamRecommendations = await
-    filterIAMRecommendations(recommendations)
-
-  console.log('Completed listIAMRecommendations',
-    JSON.stringify(iamRecommendations))
-
-  return iamRecommendations
-}
+const fetchRecommendationsStub = async (type) =>
+  type === 'VM' ? sampleRecommendationVM : sampleRecommendationIAM;
 
 /**
- * Mock the invocation of the Recommender API using stubs
+ * Asynchronously fetches recommendations from the Google Recommender API or stubs based on the specified type.
  *
- * @param type is the recommendation type that needs to be processed using a
- *             stub - this could be 'VM' or 'IAM'
- */
-const fetchRecommendationsStub = async (type) => {
-  if (type == 'VM') {
-    return sampleRecommendationVM
-  } else {
-    return sampleRecommendationIAM
-  }
-}
-
-/**
- * Invoked the Recommender API
- *
- * @param type is the recommendation type that needs to be processed using a
- *             stub - this could be 'VM' or 'IAM'
- * @param projects is the list of GCP project IDs for which the service should
- *                 pull recommendations from the Recommender API. These project
- *                 IDs should map to the corresponding IaC repository
- * @param stub boolean to determine if the invocation of the Recommender API
- *             should be mocked.
- * @return list of recommendations from the recommender API
- *        [{ name: string, description: string, stateInfo: object, etag: string
- *            lastRefreshTime: datetime, content: object }]
+ * @param {string} type The type of recommendations to fetch ('VM' or 'IAM').
+ * @param {Array<string>} projects An array of project IDs for which recommendations are fetched.
+ * @param {boolean} stub Determines whether to use stub data for recommendations.
+ * @param {string} location The location for which recommendations are fetched.
+ * @returns {Promise<Array>} A promise that resolves to an array of recommendations.
  */
 const fetchRecommendations = async (type, projects, stub, location) => {
+  if (stub) return fetchRecommendationsStub(type);
 
-  if (stub) {
-    return fetchRecommendationsStub(type)
-  }
+  const authClient = await fetchAuthClient();
+  const accessToken = await authClient.getAccessToken();
 
-  const typeURLPath = type == 'IAM' ?
-    'google.iam.policy.Recommender' :
-    'google.compute.instance.MachineTypeRecommender'
+  const typeURLPath = type === 'IAM'
+    ? 'google.iam.policy.Recommender'
+    : 'google.compute.instance.MachineTypeRecommender';
 
-  // Fetch OAuth Token
-  const auth = new google.auth.GoogleAuth({
-    scopes: ['https://www.googleapis.com/auth/cloud-platform']
-  })
-
-  const authClient = await auth.getClient()
-
-  const accessToken = await authClient.getAccessToken()
-
-  // Create promises of requests to fetch recommendations
-  const recommendationPromises = projects.map(project => request({
-    uri: `https://recommender.googleapis.com/v1beta1/projects/${project}/locations/${location}/recommenders/${typeURLPath}/recommendations`,
-    method: 'GET',
-    headers: {      
-      Authorization: `Bearer ${accessToken.token}`,
-      'x-goog-user-project': `${project}`
-    },
-  }))
-
-  // Wait for requests to complete
-  const recommendationsFromAPI =
-    (await Promise.all(recommendationPromises))
-      .map(str => JSON.parse(str))
-      .filter(r => r.recommendations)
-      .reduce((a, v) => [...a, ...v.recommendations], [])
-
-    return recommendationsFromAPI
-}
-
-/**
- * Invoked the Recommender API to get the metadata for a list of recommendations
- *
- * @param recommendationIDs a list of recommendationIDs for which metadata needs
- *                          to be retrieved
- */
-const getRecommendations = async (recommendationIDs) => {
-  // Fetch OAuth Token
-  const auth = new google.auth.GoogleAuth({
-    scopes: ['https://www.googleapis.com/auth/cloud-platform']
-  })
-
-  const authClient = await auth.getClient()
-
-  const accessToken = await authClient.getAccessToken()
-
-  // Create promises of requests
-  const promises = recommendationIDs.map(id => {    
-    const uri = `https://recommender.googleapis.com/v1beta1/${id}`
-    return request({
-      uri,
-      method: 'GET',
+  const recommendationPromises = projects.map((project) => axios.get(
+    `https://recommender.googleapis.com/v1beta1/projects/${project}/locations/${location}/recommenders/${typeURLPath}/recommendations`, {
       headers: {
         Authorization: `Bearer ${accessToken.token}`,
-        'x-goog-user-project': id.split('/')[1]
-      }
+        'x-goog-user-project': project,
+      },
     })
-  })
+  );
 
-  const result = await Promise.all(promises)
-
-  return result.map(r => JSON.parse(r))
-}
+  const recommendationsFromAPI = await Promise.all(recommendationPromises);
+  return recommendationsFromAPI
+    .map(({ data }) => data)
+    .filter((r) => r.recommendations)
+    .flatMap((r) => r.recommendations);
+};
 
 /**
- * Invokes the Recommender API to update recommendation status once processed
- *
- * @param recommendationsIDsAndETags list of recommendations for which the status
- *        needs to be updated
- * @param newStatus string value of state that needs to be set for a recommendation
+ * Lists VM resize recommendations for the given project IDs.
+ * 
+ * @param {Array<string>} projectIDs An array of project IDs to fetch VM resize recommendations for.
+ * @param {boolean} isStub Whether to use stub data.
+ * @param {string} location The location for the recommendations.
+ * @returns {Promise<Array>} A promise that resolves to an array of VM resize recommendations.
+ */
+const listVMResizeRecommendations = async (projectIDs, isStub, location) => {
+  const recommendations = await fetchRecommendations('VM', projectIDs, isStub, location);
+  const vmsToSize = filterVMSizeRecommendations(recommendations);
+  console.log('Completed listVMResizeRecommendations', JSON.stringify(vmsToSize));
+  return vmsToSize;
+};
+
+/**
+ * Lists IAM recommendations for the given project IDs.
+ * 
+ * @param {Array<string>} projectIDs An array of project IDs to fetch IAM recommendations for.
+ * @param {boolean} isStub Whether to use stub data.
+ * @param {string} location The location for the recommendations.
+ * @returns {Promise<Array>} A promise that resolves to an array of IAM recommendations.
+ */
+const listIAMRecommendations = async (projectIDs, isStub, location) => {
+  const recommendations = await fetchRecommendations('IAM', projectIDs, isStub, location);
+  const iamRecommendations = filterIAMRecommendations(recommendations);
+  console.log('Completed listIAMRecommendations', JSON.stringify(iamRecommendations));
+  return iamRecommendations;
+};
+
+/**
+ * Sets the status for a list of recommendations.
+ * 
+ * @param {Array<Object>} recommendationsIDsAndETags An array of objects containing recommendation IDs and their corresponding ETags.
+ * @param {string} newStatus The new status to set for the recommendations.
+ * @returns {Promise<void>} A promise that resolves when the status updates are complete.
  */
 const setRecommendationStatus = async (recommendationsIDsAndETags, newStatus) => {
+  const authClient = await fetchAuthClient();
+  const accessToken = await authClient.getAccessToken();
 
-  // Fetch OAuth Token
-  const auth = new google.auth.GoogleAuth({
-    scopes: ['https://www.googleapis.com/auth/cloud-platform']
-  })
-
-  const authClient = await auth.getClient()
-
-  const accessToken = await authClient.getAccessToken()
-
-  // Create promises of requests
-  const promises = recommendationsIDsAndETags.map(recommendation => {    
-    const uri =
-      `https://recommender.googleapis.com/v1beta1/${recommendation.id}:${newStatus}`
-    console.log('setRecommendationStatus uri', uri)
-    return request({
-      uri,
-      method: 'POST',
+  const promises = recommendationsIDsAndETags.map(({ id, etag }) => axios.post(
+    `https://recommender.googleapis.com/v1beta1/${id}:${newStatus}`, {
+      etag,
+    }, {
       headers: {
-        Authorization: `Bearer ${accessToken.token}`,        
-        'x-goog-user-project': recommendation.id.split('/')[1]
+        Authorization: `Bearer ${accessToken.token}`,
+        'x-goog-user-project': id.split('/')[1],
       },
-      json: {
-        etag: recommendation.etag
+    }).catch(function (error) {
+      if (error.response) {
+        // The request was made and the server responded with a status code
+        // that falls out of the range of 2xx
+        console.log(error.response.data);
+        console.log(error.response.status);
+        console.log(error.response.headers);
+      } else if (error.request) {
+        // The request was made but no response was received
+        // `error.request` is an instance of XMLHttpRequest in the browser and an instance of
+        // http.ClientRequest in node.js
+        console.log(error.request);
+      } else {
+        // Something happened in setting up the request that triggered an Error
+        console.log('Error', error.message);
       }
+        console.log(error.config);
     })
-  })
+  );
 
-  await Promise.all(promises)
-}
+  await Promise.all(promises);
+};
+
+/**
+ * Fetches recommendation details for a given array of recommendation IDs.
+ *
+ * @param {Array<string>} recommendationIDs An array of recommendation IDs to fetch details for.
+ * @returns {Promise<Array>} A promise that resolves to an array of recommendation details.
+ */
+const getRecommendations = async (recommendationIDs) => {
+  const authClient = await fetchAuthClient();
+  const accessToken = await authClient.getAccessToken();
+
+  const promises = recommendationIDs.map((id) => axios.get(
+    `https://recommender.googleapis.com/v1beta1/${id}`, {
+      headers: {
+        Authorization: `Bearer ${accessToken.token}`,
+        'x-goog-user-project': id.split('/')[1],
+      },
+    }
+  ));
+
+  const results = await Promise.all(promises);
+  return results.map(({ data }) => data);
+};
 
 /**
  * Review the recommendations payload to create an array of instances for
@@ -262,9 +218,12 @@ const filterVMSizeRecommendations = (recommendations) => {
 }
 
 
-// Review the recommendations payload to create an array of instances for
-// active recommendations. This array will comprise of the instance selfLink and
-// recommended machine type
+/**
+ * Filters and processes IAM recommendations from a given list of recommendations.
+ * 
+ * @param {Array<Object>} recommendations An array of recommendation objects to be processed.
+ * @returns {Array<Object>} An array of processed IAM recommendations.
+ */
 const filterIAMRecommendations = (recommendations) => {
   const removeRecommendations = []
 
@@ -315,14 +274,20 @@ const filterIAMRecommendations = (recommendations) => {
   return removeRecommendations
 }
 
+/**
+ * Processes and formats a role string from its full path.
+ * 
+ * @param {string} role The full path of the role to be processed.
+ * @returns {string} The processed role string.
+ */
 const processRole = (role) => {
-  const splitPortions = role.split('/')
-  return 'roles/' + splitPortions[splitPortions.length - 1]
-}
+  const splitPortions = role.split('/');
+  return `roles/${splitPortions[splitPortions.length - 1]}`;
+};
 
-module.exports = {
+export {
   listVMResizeRecommendations,
   listIAMRecommendations,
   setRecommendationStatus,
-  getRecommendations
-}
+  getRecommendations,
+};

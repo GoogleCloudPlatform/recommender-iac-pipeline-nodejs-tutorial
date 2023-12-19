@@ -20,326 +20,309 @@
  * files based on recommendations received.
  */
 
-const GIT_WORK_DIR_PATH = `/repo`
-const TERRAFORM_STATE_BUCKET = process.env.TERRAFORM_STATE_BUCKET
+import { Storage } from '@google-cloud/storage';
+import { Resource } from '@google-cloud/resource';
+import fs from 'fs-extra';
+import path from 'path';
 
-const {Storage} = require('@google-cloud/storage')
-const storage = new Storage()
-const stateBucket = storage.bucket(TERRAFORM_STATE_BUCKET)
-const fs = require('fs-extra')
-const path = require('path')
+const GIT_WORK_DIR_PATH = '/repo';
+const TERRAFORM_STATE_BUCKET = process.env.TERRAFORM_STATE_BUCKET;
 
-const {Resource} = require('@google-cloud/resource');
+const storage = new Storage();
+const stateBucket = storage.bucket(TERRAFORM_STATE_BUCKET);
 const resource = new Resource();
 
 /**
- * Pulls down current TF state from the GCS bucket
- *
- * @return the state json
+ * Fetches the Terraform state from the bucket and returns it as a JSON object.
+ * @return {Object} The Terraform state in JSON format.
  */
 const getTFState = async () => {
-  console.log('Started - Download TF State')
-
   const result = await stateBucket
     .file('terraform/state/default.tfstate')
-    .download()
+    .download();
 
-  const state = JSON.parse(result[0].toString())
-
-  console.log('Completed - Download TF State', state)
-
-  return state
-}
+  const state = JSON.parse(result[0].toString());
+  return state;
+};
 
 /**
- * Compare the array created by parsing the recommendations payload to the
- * instances in the tf.state file to create an array of VMs that need to be
- * resized and were in the TF state file.
- *
- * @param state from terraform
- * @param vmList the list of VMs to be resized
- * @return list of VMs to be updated (also contains the TF resource name)
+ * Finds and returns virtual machine resources by their IDs from the Terraform state.
+ * @param {Object} state The Terraform state.
+ * @param {Array} vmList The list of VM identifiers.
+ * @return {Array} List of VM resources found.
  */
 const getVMResourcesByIdFromState = (state, vmList) => {
-  const instancesFound = []
-  const instanceIdPrefixToRemove = "//compute.googleapis.com/"  
+  const instancesFound = [];
+  const instanceIdPrefixToRemove = '//compute.googleapis.com/';
 
   for (const resource of state.resources) {
-    if (resource.type == 'google_compute_instance') {
+    if (resource.type === 'google_compute_instance') {
       resource.instances.forEach(instance => {
         vmList.forEach(vm => {
-          // self_link and instanceID are not identical, but do have the same 
-          // instance path projects/[PROJECT]/zones/[ZONE]/instance/[INSTANCE]
-          if (vm.instanceID.substring(instanceIdPrefixToRemove.length) == 
-              instance.attributes.id) {
+          if (
+            vm.instanceID.substring(instanceIdPrefixToRemove.length) ===
+            instance.attributes.id
+          ) {
             instancesFound.push({
               ...vm,
-              tfResourceName: resource.name
-            })
+              tfResourceName: resource.name,
+            });
           }
-        })
-      })
+        });
+      });
     }
   }
 
-  return instancesFound
-}
+  return instancesFound;
+};
 
 /**
- * Fetch project number by the project's ID
- *
- * @param projectID The project's ID
- * @return The project's number
+ * Gets the project number from the given project ID.
+ * @param {string} projectID The Google Cloud Project ID.
+ * @return {Promise<string>} The project number.
  */
-const getProjectNumberFromProjectID = async (projectID) => {
-  const project = resource.project(projectID)
-
-  projectInfo = await project.get()  
-  return projectInfo[0].metadata.projectNumber
-}
+const getProjectNumberFromProjectID = async projectID => {
+  const project = resource.project(projectID);
+  const projectInfo = await project.get();
+  return projectInfo[0].metadata.projectNumber;
+};
 
 /**
- * Compare the array created by parsing the recommendations payload to the
- * instances in the tf.state file to create an array of IAM recommendations
- *
- * @param state from terraform
- * @param iamRecommendations the list of iam recommendations to be worked on
- * @return list of IAM members to be updated
- *         (also contains the TF resource name)
+ * Retrieves IAM bindings based on recommendations.
+ * @param {Object} state The Terraform state.
+ * @param {Array} iamRecommendations The list of IAM recommendations.
+ * @param {boolean} isStub Flag to indicate if it's a stub.
+ * @return {Promise<Array>} The list of resources to remove.
  */
 const getIAMBindingsFromState = async (state, iamRecommendations, isStub) => {
-  const removeResourcesFound = []
-  
-  // Create a map of project IDs to project numbers
-  let projectMapping = new Map()
-  for (const resource of state.resources) {    
-    for (const instance of resource.instances) {
-      projectNumber = projectMapping.get(instance.attributes.project)
-      if (projectNumber == undefined) {
-        if (isStub) 
-          // For stub, we use the project ID as its number
-          projectNumber = instance.attributes.project
-        else
-          projectNumber = await getProjectNumberFromProjectID(instance.attributes.project)        
-        projectMapping.set(instance.attributes.project, projectNumber)
+  const removeResourcesFound = [];
+  const projectMapping = new Map();
+
+  for (const { instances } of state.resources) {
+    for (const { attributes } of instances) {
+      let projectNumber = projectMapping.get(attributes.project);
+
+      if (!projectNumber) {
+        projectNumber = isStub
+          ? attributes.project
+          : await getProjectNumberFromProjectID(attributes.project);
+
+        projectMapping.set(attributes.project, projectNumber);
       }
     }
   }
 
-  state.resources.forEach(resource => {
-    if (resource.type == 'google_project_iam_binding') {      
-      resource.instances.forEach(instance => {
-        iamRecommendations.forEach(recommendation => {          
-          projectNumber = projectMapping.get(instance.attributes.project)
-          if (projectNumber == recommendation.project &&
-              instance.attributes.role == recommendation.role &&
-              instance.attributes.members.includes(recommendation.member)) {
-                const recommentationWithResourceName =
-                  {...recommendation, resourceName: resource.name}
-                // Override project number from recommendation with project ID
-                // because that is what Terraform uses
-                recommentationWithResourceName.project = instance.attributes.project
-                removeResourcesFound.push(recommentationWithResourceName)
-              }
-        })
-      })
-    }
-  })
+  state.resources.forEach(({ type, instances, name }) => {
+    if (type === 'google_project_iam_binding') {
+      instances.forEach(({ attributes }) => {
+        iamRecommendations.forEach(recommendation => {
+          const projectNumber = projectMapping.get(attributes.project);
 
-  return removeResourcesFound
-}
+          if (
+            projectNumber === recommendation.project &&
+            attributes.role === recommendation.role &&
+            attributes.members.includes(recommendation.member)
+          ) {
+            removeResourcesFound.push({
+              ...recommendation,
+              resourceName: name,
+              project: attributes.project,
+            });
+          }
+        });
+      });
+    }
+  });
+
+  return removeResourcesFound;
+};
 
 /**
- * Goes through the cloned repo and iterates through each TF manifest to see
- * if the VM that needs to be resized is found. If so, replaces the machine type
- *
- * @param repoPath the path to the terraform repository
- * @param resources a list of resources to apply
- * @param destPath is used for writing to a destination path for tests
- * @return list of recommendations (ids and etags) which have been applied in
- *         the repository
- *         [{id: string, etag: string}]
+ * Finds and modifies instance sizes based on recommendations.
+ * @param {string} repoPath The repository path.
+ * @param {Array} resources The resources to find and modify.
+ * @param {string} [destPath] Optional destination path for modified files.
+ * @return {Promise<Array>} List of recommendations claimed.
  */
 const findAndModifyInstances = async (repoPath, resources, destPath) => {
+  const recommendationsToClaim = [];
+  const writePath = destPath || repoPath;
 
-  const recommendationsToClaim = []
-
-  const writePath = destPath ? destPath : repoPath
-  let originalFiles = await readAllTFFiles(repoPath)
-  const tfFiles = await replaceVariableValuesInTFFiles(repoPath, originalFiles)
+  let originalFiles = await readAllTFFiles(repoPath);
+  const tfFiles = await replaceVariableValuesInTFFiles(repoPath, originalFiles);
 
   resources.forEach(resource => {
-    console.log('resource', resource)
     originalFiles = tfFiles.map((file, index) => {
-      let expr =
-        '(resource\\s+\\"google_compute_instance\\"\\s+\\"(' +
-        resource.tfResourceName +
-        ')\\".+?machine_type\\s+=\\s+)\\"([\\w -]+)\\"'
+      const expr = new RegExp(
+        `(resource\\s+"google_compute_instance"\\s+"${resource.tfResourceName}".+?machine_type\\s+=\\s+)"([\\w -]+)"`,
+        'gs'
+      );
 
-      var reg = new RegExp(expr, 'gs')
-      const matches = reg.exec(file.contents)
+      const matches = expr.exec(file.contents);
       if (matches) {
         recommendationsToClaim.push({
           id: resource.recommendationID,
-          etag: resource.recommendationETAG
-        })
+          etag: resource.recommendationETAG,
+        });
 
-        const indexOfMember = matches[0].indexOf(`machine_type`)
-
-        const lineNumToReplace =
-            findLineNumbersFromCharacters(
-              file.contents, matches.index + indexOfMember)
+        const lineNumToReplace = findLineNumbersFromCharacters(
+          file.contents,
+          matches.index + matches[0].indexOf('machine_type')
+        );
 
         const contents = replaceLine(
           originalFiles[index].contents,
           lineNumToReplace,
           `  machine_type = "${resource.size}"`
-        )
+        );
 
-        console.log('contents', contents)
-        return {
-          ...file,
-          contents: contents
-        }
-      } else {
-        return originalFiles[index]
+        return { ...file, contents };
       }
+
+      return originalFiles[index];
+    });
+  });
+
+  await Promise.all(
+    originalFiles.map(async ({ path, contents }) => {
+      const filePath = path.replace(repoPath, writePath);
+      await fs.writeFile(filePath, contents);
     })
-  })
+  );
 
-  // Write the results back to the file
-  await Promise.all(originalFiles.map(async file => {
-    const filePath = file.path.replace(repoPath, writePath)
-    await fs.writeFile(filePath, file.contents)
-  }))
-
-  return recommendationsToClaim
-}
+  return recommendationsToClaim;
+};
 
 /**
- * Reads all TF files in a repository and extracts the full path and contents
- * of those files
- *
- * @param repoDir the path to the terraform repository
- * @return list of TF files (object)
+ * Checks if a given file path corresponds to a Terraform file.
+ * @param {string} filePath The full path to the file.
+ * @return {boolean} True if the file is a Terraform file, otherwise false.
  */
-const readAllTFFiles = async (repoDir) => {
-  const allFiles = await fs.readdir(repoDir)
-
-  const tfFiles = allFiles.filter(file => {
-    const fullPath = path.join(repoDir, file)
-    if (!fs.statSync(fullPath).isDirectory()) {
-      const extension = file.split('.')[1]
-      return extension.toLowerCase() == 'tf' ? true : false
-    } else {
-      return false
-    }
-  })
-
-  return await Promise.all(tfFiles.map(async file => {
-      const fullPath = path.join(repoDir, file)
-      const contents = (
-        await fs.readFile(fullPath)).toString()
-      return {
-        path: fullPath,
-        contents: contents
-      }
-  }))
-}
+const isTerraformFile = filePath => {
+  return path.extname(filePath).toLowerCase() === '.tf';
+};
 
 /**
- * Reads the TFVars file and extracts variable names and values
- *
- * @param variableFilePath the path to the tfvars file
- * @return An object containing all the variables and their values
+ * Reads files from a given directory and filters them based on a filtering function.
+ * @param {string} repoDir The directory where the files are located.
+ * @param {function} filterFn A filtering function to apply to each file.
+ * @return {Promise<Array>} A promise resolving to an array of filtered files.
  */
-const getTFVariables = async (variableFilePath) => {
-  const variables = {}
-  if (await fs.exists(variableFilePath)) {
-    const contents = (
-      await fs.readFile(variableFilePath)).toString()
-    const lines = contents.split('\n')
-    lines.forEach(line => {
-      const values = line.split('=')      
-      if (values.length == 2) {
-        variables[values[0].trim()] =
-          values[1].replace(/\"/g, "").trim()
+const readFilteredFiles = async (repoDir, filterFn) => {
+  const allFiles = await fs.readdir(repoDir);
+  return await Promise.all(
+    allFiles
+      .filter(file => filterFn(path.join(repoDir, file)))
+      .map(async file => {
+        const fullPath = path.join(repoDir, file);
+        const contents = await fs.readFile(fullPath, 'utf-8');
+        return { path: fullPath, contents };
+      })
+  );
+};
+
+/**
+ * Reads all Terraform files from a given directory.
+ * @param {string} repoDir The directory where the Terraform files are located.
+ * @return {Promise<Array>} A promise resolving to an array of Terraform files.
+ */
+const readAllTFFiles = async repoDir => {
+  return readFilteredFiles(repoDir, filePath => {
+    return !fs.statSync(filePath).isDirectory() && isTerraformFile(filePath);
+  });
+};
+
+/**
+ * Reads and parses the Terraform variable file.
+ * @param {string} variableFilePath The full path to the variable file.
+ * @return {Promise<Object>} A promise resolving to an object containing the parsed variables.
+ */
+const getTFVariables = async variableFilePath => {
+  const variables = {};
+  try {
+    const contents = await fs.readFile(variableFilePath, 'utf-8');
+    contents.split('\n').forEach(line => {
+      const [key, value] = line.split('=');
+      if (key && value) {
+        variables[key.trim()] = value.replace(/"/g, '').trim();
       }
-    })
+    });
+  } catch (err) {
+    console.error(`Could not read ${variableFilePath}: ${err}`);
   }
-
-  return variables
-}
+  return variables;
+};
 
 /**
- * Replaces variable values in TF contents using regular expressions
- *
- * @param repoDir the path to the repo
- * @param tfContents the contents of each file
- * @return list of new contents
+ * Replaces placeholders in the file contents based on the provided variables and regex builder.
+ * @param {Object} file The file object containing path and contents.
+ * @param {Object} variables The variables to use for replacement.
+ * @param {function} regexBuilder A function to build regex patterns for replacement.
+ * @return {Object} The file object with replaced contents.
+ */
+const replaceInContents = (file, variables, regexBuilder) => {
+  let contents = file.contents;
+  Object.keys(variables).forEach(variable => {
+    const reg = regexBuilder(variable);
+    contents = contents.replace(reg, variables[variable]);
+  });
+  return { ...file, contents };
+};
+
+/**
+ * Replaces variable values in the contents of Terraform files.
+ * @param {string} repoDir The directory where the Terraform files are located.
+ * @param {Array} tfContents An array containing the contents of the Terraform files.
+ * @return {Promise<Array>} A promise resolving to an array of files with replaced contents.
  */
 const replaceVariableValuesInTFFiles = async (repoDir, tfContents) => {
-  const variableFilePath = path.join(repoDir, 'terraform.tfvars')
-  const variables = await getTFVariables(variableFilePath)
-  return tfContents.map(file => {
+  const variableFilePath = path.join(repoDir, 'terraform.tfvars');
+  const variables = await getTFVariables(variableFilePath);
+  return tfContents.map(file => replaceInContents(file, variables, 
+    variable => new RegExp(`\\$\\{\\s*var\\.${variable}\\s*}`, 'gs'))
+  );
+};
 
-    // Loop through each variable and replace
-    let contents = file.contents
-    Object.keys(variables).forEach(variable => {
-      var reg = new RegExp(
-        '\\${\\s*var\\.' + variable + '\\s*}', 'gs')
-
-      contents = contents.replace(reg, variables[variable])
-    })
-
-    return {
-      path: file.path,
-      contents: contents
-    }
-  })
-}
 
 /**
  * Replaces Service Account values in TF contents using regular expressions
  *
  * @param tfContents the contents of each file
  * @return list of new contents
- */
-const replaceServiceAccountValues = (tfContents) => {
+ */const replaceServiceAccountValues = tfContents => {
   // Find all service accounts and create map serviceacccountname -> account_id
-  const serviceAccounts = {}
+  const serviceAccounts = {};
   tfContents.forEach(file => {
-    var reg = new RegExp(
-      'resource\\s*"google_service_account"\\s*"(\\w+)"\\s*{.+?account_id\\s*=\\s*"(\\w+)".+?}', 'gs')
-
-    const groups = reg.exec(file.contents)
+    const reg = new RegExp(
+      'resource\\s*"google_service_account"\\s*"(\\w+)"\\s*{.+?account_id\\s*=\\s*"(\\w+)".+?}', 'gs'
+    );
+    
+    const groups = reg.exec(file.contents);
     if (groups) {
-      serviceAccounts[groups[1]] = groups[2]
+      serviceAccounts[groups[1]] = groups[2];
     }
-  })
+  });
 
   if (Object.keys(serviceAccounts).length > 0) {
-    // Find google_project_iam_binding elements and replace service account_Id
     return tfContents.map(file => {
-
-      // Loop through each variable and replace
-      let contents = file.contents
+      let contents = file.contents;
       Object.keys(serviceAccounts).forEach(sa => {
-        var reg = new RegExp(
-          '\\${\\s*google_service_account\\.' + sa + '\\.account_id\\s*}', 'gs')
+        const reg = new RegExp(
+          `\\$\\{\\s*google_service_account\\.${sa}\\.account_id\\s*}`, 'gs'
+        );
 
-        contents = contents.replace(reg, serviceAccounts[sa])
-      })
+        contents = contents.replace(reg, serviceAccounts[sa]);
+      });
 
       return {
         path: file.path,
-        contents: contents
-      }
-    })
-  } else {
-    return tfContents
+        contents
+      };
+    });
   }
-}
+  
+  return tfContents;
+};
 
 /**
  * Goes through the cloned repo and iterates through each TF manifest to see
@@ -352,105 +335,88 @@ const replaceServiceAccountValues = (tfContents) => {
  *         the repository
  */
 const findAndModifyIAMRoleBindings = async (repoPath, resources, destPath) => {
-  
-  const recommendationsToClaim = []
+  const recommendationsToClaim = [];
+  const writePath = destPath || repoPath;
+  let originalFiles = await readAllTFFiles(repoPath);
+  let tfFiles = await replaceVariableValuesInTFFiles(repoPath, originalFiles);
+  tfFiles = replaceServiceAccountValues(tfFiles);
 
-  const writePath = destPath ? destPath : repoPath
-  let originalFiles = await readAllTFFiles(repoPath)
-  tfFiles = await replaceVariableValuesInTFFiles(repoPath, originalFiles)  
-  tfFiles = replaceServiceAccountValues(tfFiles)
-  
   resources.forEach(resource => {
     originalFiles = tfFiles.map((file, index) => {
-      let expr =
-        'resource\\s+"google_project_iam_binding"\\s+"' +
-        resource.resourceName +
-        '"\\s+{.+?project\\s*=\\s*"' +
-        resource.project +
-        '".+?role\\s*=\\s*"' +
-        resource.role +
-        '".+?members\\s*=\\s*(\\[.+?"' +
-        resource.member + '".+?\\]).+?}'
-      
-      var reg = new RegExp(expr, 'gs')
-      const matches = reg.exec(file.contents)
+      const expr = `resource\\s+"google_project_iam_binding"\\s+"${resource.resourceName}"\\s+{.+?project\\s*=\\s*"${resource.project}".+?role\\s*=\\s*"${resource.role}".+?members\\s*=\\s*(\\[.+?"${resource.member}".+?\\]).+?}`;
+      const reg = new RegExp(expr, 'gs');
+      const matches = reg.exec(file.contents);
+
       if (matches) {
         recommendationsToClaim.push({
           id: resource.recommendationID,
-          etag: resource.recommendationETAG
-        })
-        let members = JSON.parse(matches[1])
-        members = members.filter(mem => mem != resource.member)
-        if (members.length > 0) {
-          // Remove only members part
-          // Find location of members match
+          etag: resource.recommendationETAG,
+        });
 
-          const indexOfMember = matches[0].indexOf(`"${resource.member}"`)
-          console.log('indexOfMember', indexOfMember)
-          const lineNumToComment =
-            findLineNumbersFromCharacters(
-              file.contents, matches.index + indexOfMember)
+        let members = JSON.parse(matches[1]);
+        members = members.filter(mem => mem !== resource.member);
+
+        if (members.length > 0) {
+          const indexOfMember = matches[0].indexOf(`"${resource.member}"`);
+          const lineNumToComment = findLineNumbersFromCharacters(
+            file.contents,
+            matches.index + indexOfMember
+          );
 
           const contents = commentLines(
             originalFiles[index].contents,
             lineNumToComment,
-            lineNumToComment)
+            lineNumToComment
+          );
 
-          return {
-            ...file,
-            contents: contents
-          }
+          return { ...file, contents };
         } else {
-          // Remove full section
-          const startLine =
-            findLineNumbersFromCharacters(
-              file.contents, matches.index)
-
-          const endLine =
-            findLineNumbersFromCharacters(
-              file.contents, matches.index + matches[0].length)
+          const startLine = findLineNumbersFromCharacters(
+            file.contents,
+            matches.index
+          );
+          const endLine = findLineNumbersFromCharacters(
+            file.contents,
+            matches.index + matches[0].length
+          );
 
           let contents = commentLines(
             originalFiles[index].contents,
             startLine,
-            endLine)
+            endLine
+          );
 
-          // If add resource present
-          let additionalLines = ''
+          let additionalLines = '';
           if (resource.add) {
-
-            additionalLines = '\n\n'
-
-            additionalLines += copyLines(
+            additionalLines = `\n\n${copyLines(
               originalFiles[index].contents,
               startLine,
               endLine
-            )
-
-            additionalLines =
-              additionalLines.replace(
-                /(.+role\s*=\s*").+?(".+)/gs, `$1${resource.add}$2`)
+            )}`;
+            additionalLines = additionalLines.replace(
+              /(.+role\s*=\s*").+?(".+)/gs,
+              `$1${resource.add}$2`
+            );
           }
 
-          return {
-            ...file,
-            contents: contents + additionalLines
-          }
+          return { ...file, contents: contents + additionalLines };
         }
       } else {
-        return originalFiles[index]
+        return originalFiles[index];
       }
+    });
+  });
+
+  await Promise.all(
+    originalFiles.map(async file => {
+      const filePath = file.path.replace(repoPath, writePath);
+      await fs.writeFile(filePath, file.contents);
     })
-  })
+  );
 
-  // Write the results back to the file
-  await Promise.all(originalFiles.map(async file => {
-    const filePath = file.path.replace(repoPath, writePath)
-    await fs.writeFile(filePath, file.contents)
-  }))
+  return recommendationsToClaim;
+};
 
-  return recommendationsToClaim
-}
 
 /**
  * Finds the line number given the character count
@@ -460,127 +426,97 @@ const findAndModifyIAMRoleBindings = async (repoPath, resources, destPath) => {
  * @return line number
  */
 const findLineNumbersFromCharacters = (text, index) => {
-  // Find line breaks
-  let num = 1
+  let num = 1;
   for (let i = 0; i <= index; i++) {
-    if (text[i] == '\n') {
-      num += 1
+    if (text[i] === '\n') {
+      num += 1;
     }
   }
-  return num
-}
+  return num;
+};
 
 /**
- * Comments lines specified in the contents
- *
- * @param text to comment lines in
- * @param startLine starting line to comment
- * @param endLine end line to comment
- * @return the new contents
+ * Comments out lines of text between specified start and end lines.
+ * @param {string} text The original text.
+ * @param {number} startLine The 1-based line number where commenting starts.
+ * @param {number} endLine The 1-based line number where commenting ends.
+ * @return {string} The modified text with lines commented out.
  */
 const commentLines = (text, startLine, endLine) => {
-  let allLines = text.split('\n')
-  allLines[startLine - 1] = '/* ' + allLines[startLine - 1]
-  allLines[endLine - 1] = allLines[endLine - 1] + ' */'
-  return allLines.join('\n')
-}
+  const allLines = text.split('\n');
+  allLines[startLine - 1] = `/* ${allLines[startLine - 1]}`;
+  allLines[endLine - 1] = `${allLines[endLine - 1]} */`;
+  return allLines.join('\n');
+};
 
 /**
- * Copy between line number in contents
- *
- * @param text of the contents
- * @param startLine starting line to copy
- * @param endLine end line to copy
- * @return the copied lines
+ * Copies lines of text between specified start and end lines.
+ * @param {string} text The original text.
+ * @param {number} startLine The 1-based line number where copying starts.
+ * @param {number} endLine The 1-based line number where copying ends.
+ * @return {string} The lines of text that were copied.
  */
 const copyLines = (text, startLine, endLine) => {
-  let allLines = text.split('\n')
-  return allLines.slice(startLine - 1, endLine).join('\n')
-}
+  const allLines = text.split('\n');
+  return allLines.slice(startLine - 1, endLine).join('\n');
+};
 
 /**
- * Replace a line at index with contents
- *
- * @param contents
- * @param lineNum to replace
- * @param text to replace with
- * @return new contents
+ * Replaces a line of text at a given line number.
+ * @param {string} contents The original text.
+ * @param {number} lineNum The 1-based line number to replace.
+ * @param {string} text The new text to insert.
+ * @return {string} The modified text with the line replaced.
  */
 const replaceLine = (contents, lineNum, text) => {
-  let allLines = contents.split('\n')
-  allLines[lineNum - 1] = text
-  return allLines.join('\n')
-}
+  const allLines = contents.split('\n');
+  allLines[lineNum - 1] = text;
+  return allLines.join('\n');
+};
 
 /**
- * Applies the VM resize recommendations to the TF files in the repository.
- * The TF State is first obtained from a bucket in GCS. Then the terraform
- * resource names are obtained for each of the resources in the TF file and
- * finally the recommendations are applied
- *
- * @param repoName name of the repo path
- * @param vmResizeRecommendations the list of vm recommendations to be worked on
- *        [{instanceID: string, size: int, recommendationID: string,
- *           recommendationETag: string}]
- * @return list of recommendations and etags that have been claimed
- *         [{recommendationID: string, recommendationETag: string}]
+ * Applies VM resize recommendations to a Terraform repo.
+ * @param {string} repoName The name of the repo where Terraform files are located.
+ * @param {Array} vmResizeRecommendations An array of VM resize recommendations.
+ * @param {boolean} isStub A flag to indicate if the function should run in stub mode.
+ * @return {Promise<Array>} A promise resolving to an array of claimed recommendations.
  */
 const applyVMResizeRecommendations = async (repoName, vmResizeRecommendations, isStub) => {
+  let recommendationsToClaim = [];
 
-    let recommendationsToClaim = []
-
-    // Download TF State
-    const tfState = await getTFState()
-
-    // Find recommendation in state
-    let resourceNames = getVMResourcesByIdFromState(
-      tfState, vmResizeRecommendations)
+  const tfState = await getTFState();
+  const resourceNames = getVMResourcesByIdFromState(tfState, vmResizeRecommendations);
   
-    // Make changes to file
-    if (resourceNames.length > 0) {
-      recommendationsToClaim = await findAndModifyInstances(
-        `/repo/${repoName}`, resourceNames)
-    }
+  if (resourceNames.length > 0) {
+    recommendationsToClaim = await findAndModifyInstances(`/repo/${repoName}`, resourceNames);
+  }
 
-    return recommendationsToClaim
-}
+  return recommendationsToClaim;
+};
 
 /**
- * Applies the IAM recommendations to the TF files in the repository.
- * The TF State is first obtained from a bucket in GCS. Then the terraform
- * resource names are obtained for each of the resources in the TF file and
- * finally the recommendations are applied
- *
- * @param repoName name of the repo path
- *        string
- * @param iamRecommendations the list of iam recommendations to be worked on
- *        [{project: string, member: string, role: string,
- *           add: string, recommendationID: string, recommendationETag: string}]
- * @return list of recommendations and etags that have been claimed
- *         [{recommendationID: string, recommendationETag: string}]
+ * Applies IAM role recommendations to a Terraform repo.
+ * @param {string} repoName The name of the repo where Terraform files are located.
+ * @param {Array} iamRecommendations An array of IAM recommendations.
+ * @param {boolean} isStub A flag to indicate if the function should run in stub mode.
+ * @return {Promise<Array>} A promise resolving to an array of claimed recommendations.
  */
 const applyIAMRecommendations = async (repoName, iamRecommendations, isStub) => {
+  let recommendationsToClaim = [];
 
-    let recommendationsToClaim = []
+  const tfState = await getTFState();
+  const resourceNames = await getIAMBindingsFromState(tfState, iamRecommendations, isStub);
+  
+  if (resourceNames.length > 0) {
+    recommendationsToClaim = await findAndModifyIAMRoleBindings(`/repo/${repoName}`, resourceNames);
+  }
 
-    // Download TF State
-    const tfState = await getTFState()
+  return recommendationsToClaim;
+};
 
-    // Find recommendation in state
-    let resourceNames = await getIAMBindingsFromState(tfState, iamRecommendations, isStub)
-    
-    // Make changes to file
-    if (resourceNames.length > 0) {
-      recommendationsToClaim = await findAndModifyIAMRoleBindings(
-        `/repo/${repoName}`, resourceNames)
-    }
-
-    return recommendationsToClaim
-}
-
-module.exports = {
+export {
   GIT_WORK_DIR_PATH,
   applyVMResizeRecommendations,
   applyIAMRecommendations
-}
+};
 
