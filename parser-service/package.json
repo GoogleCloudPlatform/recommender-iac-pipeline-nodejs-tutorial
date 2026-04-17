@@ -11,7 +11,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@google-cloud/firestore": "^6.7.0",
+    "@google-cloud/firestore": "^8.5.0",
     "@google-cloud/resource": "^1.2.1",
     "@google-cloud/storage": "^7.1.0",
     "@octokit/rest": "^20.0.2",
